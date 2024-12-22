@@ -20,7 +20,8 @@ class Program
                 Util.ForeachFile("temp",
                 (path) =>
                 {
-                    if (Path.GetExtension(path).ToLower() == ".xhtml")
+                    var ext = Path.GetExtension(path).ToLower();
+                    if (ext == ".xhtml" || ext == "html")
                     {
                         var x = new ProcXHTML(path);
                     }
