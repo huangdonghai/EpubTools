@@ -21,9 +21,9 @@ public enum NotePosition
 class NoteEntry
 {
     public IElement srcParentNode;
-    public IElement srcNodeId;
+    public IElement srcNoteId;
     public IElement dstParentNode;
-    public IElement dstNodeId;
+    public IElement dstNoteId;
     public bool hasLinkTag = false;
     public bool isInlineNode = false;
     public int originalOrder = 0;
@@ -45,6 +45,8 @@ public class ProcXHTML
 
     Regex RegId = new Regex(@"[\(\[〔【](\d+|[一二三四五六七八九〇]+)[\)\]〕】]");
 
+    string m_filename;
+
     List<NoteEntry> m_notes = [];
 
     bool m_dirty = false;
@@ -63,20 +65,27 @@ public class ProcXHTML
 
     public ProcXHTML(string filename, NotePosition notePosition)
     {
-        Log.log("-------" + Path.GetFileName(filename) + "---------");
+        m_filename = Path.GetFileName(filename);
+        Log.log("-------" + m_filename + "---------");
         var text = File.ReadAllText(filename);
-
+#if false
         //Use the default configuration for AngleSharp
         IConfiguration config = Configuration.Default;
 
         IBrowsingContext context = BrowsingContext.New(config);
         IHtmlParser parser = context.GetService<IHtmlParser>();
+#else
+        var parser = new HtmlParser(new HtmlParserOptions
+        {
+            IsKeepingSourceReferences = true,
+        });
+#endif
 
         IDocument document = parser.ParseDocument(text);
 
         PrepareNotes(document, notePosition);
 
-        ProcessNotes(document, notePosition);
+        //ProcessNotes(document, notePosition);
 
         if (m_dirty)
             File.WriteAllText(filename, document.DocumentElement.OuterHtml);
@@ -156,30 +165,61 @@ public class ProcXHTML
 
             int originalOrder = GetNoteOrder(noteid.TextContent);
 
+            // check error
+            if (originalOrder == 0)
+            {
+                Log.log(m_filename, noteid, "Error: noteid is invalid");
+                continue;
+            }
+
             // add new note entry
             if (parent.ClassName != NoteCssClass)
             {
                 var entry = new NoteEntry();
                 entry.srcParentNode = parent;
-                entry.srcNodeId = noteid;
+                entry.srcNoteId = noteid;
                 entry.hasLinkTag = false;
                 entry.originalOrder = originalOrder;
                 entry.newOrder = 0;
                 entry.wholeFileOrder = wholeFileIdCount++;
 
-                m_notes.Add(entry);
+                // check original order is valid
+                if (parent != lastParent)
+                {
+                    if (lastParent == null)
+                    {
+                        if (entry.originalOrder != 1)
+                        {
+                            Log.log(m_filename, noteid, "id is out of order, should be 1 but really is " + entry.originalOrder);
+                            entry.originalOrder = 1;
+                        }
+                    } else
+                    {
+                        var lastEntry = m_notes[m_notes.Count - 1];
+                        if (entry.originalOrder != lastEntry.originalOrder + 1 && entry.originalOrder != 1)
+                        {
+                            Log.log(m_filename, noteid, $"id is out of order, should be 1 or {lastEntry.originalOrder + 1} but really is {entry.originalOrder} ");
+                            entry.originalOrder = lastEntry.originalOrder + 1;
+                        }
+                    }
+                }
+                else
+                {
+                    var lastEntry = m_notes[m_notes.Count - 1];
+                    if (entry.originalOrder != lastEntry.originalOrder + 1)
+                    {
+                        Log.log(m_filename, noteid, $"id is out of order, should be {lastEntry.originalOrder + 1} but really is {entry.originalOrder} ");
+                        entry.originalOrder = lastEntry.originalOrder + 1;
+                    }
+                }
 
                 // check new note position
                 if (notePosition == NotePosition.Inline)
                 {
+                    // DO NOTHING
                 }
                 else if (notePosition == NotePosition.BlockEnd)
                 {
-                    if (lastParent != parent)
-                    {
-                        lastParent = parent;
-                        curBlockCount = 0;
-                    }
                     entry.newOrder = curBlockCount + 1;
                     curBlockCount++;
                 }
@@ -190,19 +230,43 @@ public class ProcXHTML
 
                 if (entry.newOrder != entry.originalOrder)
                     m_dirty = true;
+
+                m_notes.Add(entry);
+
+                if (lastParent != parent)
+                {
+                    lastParent = parent;
+                    curBlockCount = 1;
+                }
             }
             // this is a dst node, try link to src node id
             else
             {
+                // check duplicate noteid
+                if (parent == lastParent)
+                {
+                    Log.log(m_filename, noteid, $"Error: duplicated note id {originalOrder}");
+                    continue;
+                }
+
+                // check limits
+                if (lastDstCount >= m_notes.Count)
+                {
+                    Log.log(m_filename, noteid, $"Error: too many note id {originalOrder}");
+                    continue;
+                }
+
                 var entry = m_notes[lastDstCount];
                 if (entry.originalOrder != originalOrder)
                 {
-                    Log.log("Error: noteid order not match");
+                    Log.log(m_filename, noteid, $"Error: noteid order not match, expect {originalOrder} but really is {entry.originalOrder}");
                 }
                 entry.dstParentNode = parent;
-                entry.dstNodeId = noteid;
+                entry.dstNoteId = noteid;
 
                 lastDstCount++;
+
+                lastParent = parent;
             }
         }
     }
@@ -213,8 +277,8 @@ public class ProcXHTML
         {
             if (notePosition == NotePosition.Inline)
             {
-                entry.srcNodeId.InnerHtml = (entry.dstParentNode.TextContent);
-                entry.srcNodeId.ClassName = NoteCssClass;
+                entry.srcNoteId.InnerHtml = (entry.dstParentNode.TextContent);
+                entry.srcNoteId.ClassName = NoteCssClass;
             }
         }
     }

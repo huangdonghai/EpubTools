@@ -1,3 +1,4 @@
+using AngleSharp.Dom;
 using System;
 using System.IO;
 
@@ -21,6 +22,10 @@ public class Log
         File.WriteAllText(path, t);
     }
 
+    public static void log(string filename, IElement node, string msg)
+    {
+        log(filename + ":" + node.SourceReference.Position.Line + ":" + node.SourceReference.Position.Column + ":" + msg);
+    }
 }
 
 
