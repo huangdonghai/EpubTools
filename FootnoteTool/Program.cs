@@ -8,7 +8,7 @@ class Program
 {
     static void Main(string[] args)
     {
-        Console.WriteLine("Epub Footnote Tool");
+        Console.WriteLine("Epub BlockEnd Tool");
         if (args.Length > 0)
         {
             if (Path.GetExtension(args[0]).ToLower() == ".epub" && File.Exists(args[0]))
@@ -23,7 +23,7 @@ class Program
                     var ext = Path.GetExtension(path).ToLower();
                     if (ext == ".xhtml" || ext == "html")
                     {
-                        var x = new ProcXHTML(path);
+                        var x = new ProcXHTML(path, NotePosition.Inline);
                     }
                 }
                 );
