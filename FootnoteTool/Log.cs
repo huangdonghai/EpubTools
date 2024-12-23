@@ -24,7 +24,7 @@ public class Log
 
     public static void log(string filename, IElement node, string msg)
     {
-        log(filename + ":" + node.SourceReference.Position.Line + ":" + node.SourceReference.Position.Column + ":" + msg);
+        log(filename + ":" + node.SourceReference.Position.Line + ":" + node.SourceReference.Position.Column + ":" + node.OuterHtml + ": " + msg);
     }
 }
 

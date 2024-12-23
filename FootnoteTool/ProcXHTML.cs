@@ -48,6 +48,7 @@ public class ProcXHTML
     string m_filename;
 
     List<NoteEntry> m_notes = [];
+    List<IElement> m_orphanNotes = []; // notes without a corresponding link
 
     bool m_dirty = false;
 
@@ -116,6 +117,7 @@ public class ProcXHTML
         var match = RegId.Match(text);
         if (match.Success)
         {
+            text = match.Groups[1].Value;
             if (text.Length == 0)
                 return 0;
             if (text[0] >= '0' && text[0] <= '9')
@@ -191,7 +193,6 @@ public class ProcXHTML
                         if (entry.originalOrder != 1)
                         {
                             Log.log(m_filename, noteid, "id is out of order, should be 1 but really is " + entry.originalOrder);
-                            entry.originalOrder = 1;
                         }
                     } else
                     {
@@ -199,7 +200,6 @@ public class ProcXHTML
                         if (entry.originalOrder != lastEntry.originalOrder + 1 && entry.originalOrder != 1)
                         {
                             Log.log(m_filename, noteid, $"id is out of order, should be 1 or {lastEntry.originalOrder + 1} but really is {entry.originalOrder} ");
-                            entry.originalOrder = lastEntry.originalOrder + 1;
                         }
                     }
                 }
@@ -209,7 +209,12 @@ public class ProcXHTML
                     if (entry.originalOrder != lastEntry.originalOrder + 1)
                     {
                         Log.log(m_filename, noteid, $"id is out of order, should be {lastEntry.originalOrder + 1} but really is {entry.originalOrder} ");
-                        entry.originalOrder = lastEntry.originalOrder + 1;
+                        // if the order is lower than last entry, ignore it
+                        if (entry.originalOrder <= lastEntry.originalOrder)
+                        {
+                            m_orphanNotes.Add(noteid);
+                            continue;
+                        }
                     }
                 }
 
@@ -245,28 +250,48 @@ public class ProcXHTML
                 // check duplicate noteid
                 if (parent == lastParent)
                 {
-                    Log.log(m_filename, noteid, $"Error: duplicated note id {originalOrder}");
+                    Log.log(m_filename, noteid, $"Waring: duplicated note id {originalOrder}");
                     continue;
                 }
 
                 // check limits
                 if (lastDstCount >= m_notes.Count)
                 {
-                    Log.log(m_filename, noteid, $"Error: too many note id {originalOrder}");
+                    Log.log(m_filename, noteid, $"Waring: too many note id {originalOrder}");
                     continue;
                 }
 
-                var entry = m_notes[lastDstCount];
+                var entry = m_notes[lastDstCount++];
                 if (entry.originalOrder != originalOrder)
                 {
-                    Log.log(m_filename, noteid, $"Error: noteid order not match, expect {originalOrder} but really is {entry.originalOrder}");
+                    Log.log(m_filename, noteid, $"Warning: noteid order not match, expect {originalOrder} but really is {entry.originalOrder}");
+
+                    // try to find the match entry
+                    while (lastDstCount < m_notes.Count)
+                    {
+                        if (m_notes[lastDstCount].originalOrder == originalOrder)
+                        {
+                            entry = m_notes[lastDstCount++];
+                            break;
+                        }
+                        else
+                        {
+                            lastDstCount++;
+                        }
+                    }
                 }
-                entry.dstParentNode = parent;
-                entry.dstNoteId = noteid;
 
-                lastDstCount++;
-
-                lastParent = parent;
+                if (entry.originalOrder == originalOrder)
+                {
+                    entry.dstParentNode = parent;
+                    entry.dstNoteId = noteid;
+                    lastParent = parent;
+                }
+                else
+                {
+                    m_orphanNotes.Add(noteid);
+                    Log.log(m_filename, noteid, $"Waring: noteid {originalOrder} not found");
+                }
             }
         }
     }

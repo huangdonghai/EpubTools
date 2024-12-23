@@ -21,7 +21,7 @@ class Program
                 (path) =>
                 {
                     var ext = Path.GetExtension(path).ToLower();
-                    if (ext == ".xhtml" || ext == "html")
+                    if (ext == ".xhtml" || ext == ".html")
                     {
                         var x = new ProcXHTML(path, NotePosition.Inline);
                     }
@@ -35,6 +35,10 @@ class Program
                 outname=Path.Combine(Path.GetDirectoryName(args[0]), outname);
                 Util.Packup(outname);
                 Util.DeleteDir("temp");
+
+                string logname = Path.GetFileNameWithoutExtension(args[0]) + " [FootnoteTool].log";
+                logname = Path.Combine(Path.GetDirectoryName(args[0]), logname);
+                Log.Save(logname);
 
             }
             else
