@@ -192,14 +192,14 @@ public class ProcXHTML
                     {
                         if (entry.originalOrder != 1)
                         {
-                            Log.log(m_filename, noteid, "id is out of order, should be 1 but really is " + entry.originalOrder);
+                            Log.log(m_filename, noteid, "src id is out of order, should be 1 but really is " + entry.originalOrder);
                         }
                     } else
                     {
                         var lastEntry = m_notes[m_notes.Count - 1];
                         if (entry.originalOrder != lastEntry.originalOrder + 1 && entry.originalOrder != 1)
                         {
-                            Log.log(m_filename, noteid, $"id is out of order, should be 1 or {lastEntry.originalOrder + 1} but really is {entry.originalOrder} ");
+                            Log.log(m_filename, noteid, $"src id is out of order, should be 1 or {lastEntry.originalOrder + 1} but really is {entry.originalOrder} ");
                         }
                     }
                 }
@@ -208,7 +208,7 @@ public class ProcXHTML
                     var lastEntry = m_notes[m_notes.Count - 1];
                     if (entry.originalOrder != lastEntry.originalOrder + 1)
                     {
-                        Log.log(m_filename, noteid, $"id is out of order, should be {lastEntry.originalOrder + 1} but really is {entry.originalOrder} ");
+                        Log.log(m_filename, noteid, $"src id is out of order, should be {lastEntry.originalOrder + 1} but really is {entry.originalOrder} ");
                         // if the order is lower than last entry, ignore it
                         if (entry.originalOrder <= lastEntry.originalOrder)
                         {
@@ -250,14 +250,14 @@ public class ProcXHTML
                 // check duplicate noteid
                 if (parent == lastParent)
                 {
-                    Log.log(m_filename, noteid, $"Waring: duplicated note id {originalOrder}");
+                    Log.log(m_filename, noteid, $"Waring: duplicated dst note id {originalOrder}");
                     continue;
                 }
 
                 // check limits
                 if (lastDstCount >= m_notes.Count)
                 {
-                    Log.log(m_filename, noteid, $"Waring: too many note id {originalOrder}");
+                    Log.log(m_filename, noteid, $"Waring: too many dst note id {originalOrder}");
                     continue;
                 }
 
@@ -290,7 +290,7 @@ public class ProcXHTML
                 else
                 {
                     m_orphanNotes.Add(noteid);
-                    Log.log(m_filename, noteid, $"Waring: noteid {originalOrder} not found");
+                    Log.log(m_filename, noteid, $"src noteid {originalOrder} not found");
                 }
             }
         }
