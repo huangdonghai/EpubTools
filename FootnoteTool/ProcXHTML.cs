@@ -145,6 +145,9 @@ public class ProcXHTML
 
     private void PrepareNotes(IDocument document, NotePosition notePosition)
     {
+        // dict help find srcNoteId and dstNote
+        Dictionary<int, IElement> noteIdDict = [];
+        
         int wholeFileIdCount = 0;
         int lastDstCount = 0;
 
@@ -192,23 +195,28 @@ public class ProcXHTML
                     {
                         if (entry.originalOrder != 1)
                         {
-                            Log.log(m_filename, noteid, "src id is out of order, should be 1 but really is " + entry.originalOrder);
+                            Log.log(m_filename, noteid, "src id is out of order, should be 1 but really is "
+                                                        + entry.originalOrder);
                         }
                     } else
                     {
-                        var lastEntry = m_notes[m_notes.Count - 1];
+                        var lastEntry = m_notes.Last();
                         if (entry.originalOrder != lastEntry.originalOrder + 1 && entry.originalOrder != 1)
                         {
-                            Log.log(m_filename, noteid, $"src id is out of order, should be 1 or {lastEntry.originalOrder + 1} but really is {entry.originalOrder} ");
+                            Log.log(m_filename, noteid, "src id is out of order, should be 1 or "
+                                                        + (lastEntry.originalOrder + 1) + "but really is "
+                                                        + entry.originalOrder);
                         }
                     }
                 }
                 else
                 {
-                    var lastEntry = m_notes[m_notes.Count - 1];
+                    var lastEntry = m_notes.Last();
                     if (entry.originalOrder != lastEntry.originalOrder + 1)
                     {
-                        Log.log(m_filename, noteid, $"src id is out of order, should be {lastEntry.originalOrder + 1} but really is {entry.originalOrder} ");
+                        Log.log(m_filename, noteid, "src id is out of order, should be "
+                                                    + (lastEntry.originalOrder + 1) + " but really is " 
+                                                    + entry.originalOrder);
                         // if the order is lower than last entry, ignore it
                         if (entry.originalOrder <= lastEntry.originalOrder)
                         {
@@ -264,7 +272,8 @@ public class ProcXHTML
                 var entry = m_notes[lastDstCount++];
                 if (entry.originalOrder != originalOrder)
                 {
-                    Log.log(m_filename, noteid, $"Warning: noteid order not match, expect {originalOrder} but really is {entry.originalOrder}");
+                    Log.log(m_filename, noteid, "Warning: noteid order not match, expect " 
+                                                + originalOrder + " but really is " + entry.originalOrder);
 
                     // try to find the match entry
                     while (lastDstCount < m_notes.Count)
