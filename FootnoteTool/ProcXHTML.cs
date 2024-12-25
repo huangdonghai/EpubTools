@@ -180,6 +180,7 @@ public class ProcXHTML
             // add new note entry
             if (parent.ClassName != NoteCssClass)
             {
+                noteIdDict.Add(originalOrder, noteid);
                 var entry = new NoteEntry();
                 entry.srcParentNode = parent;
                 entry.srcNoteId = noteid;
