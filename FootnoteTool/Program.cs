@@ -8,6 +8,7 @@ class Program
 {
     static void Main(string[] args)
     {
+        int maxNoteNum = 0;
         Console.WriteLine("Epub BlockEnd Tool");
         if (args.Length > 0)
         {
@@ -23,7 +24,9 @@ class Program
                     var ext = Path.GetExtension(path).ToLower();
                     if (ext == ".xhtml" || ext == ".html")
                     {
-                        var x = new ProcXHTML(path, NotePosition.Inline);
+                        var x = new ProcXHTML(path, NoteReposition.PartEnd);
+
+                        maxNoteNum = x.MaxNoteNum > maxNoteNum ? x.MaxNoteNum : maxNoteNum;
                     }
                 }
                 );
@@ -38,6 +41,8 @@ class Program
 
                 string logname = Path.GetFileNameWithoutExtension(args[0]) + " [FootnoteTool].log";
                 logname = Path.Combine(Path.GetDirectoryName(args[0]), logname);
+
+                Log.log("MaxNoteNum: " + maxNoteNum);
                 Log.Save(logname);
 
             }

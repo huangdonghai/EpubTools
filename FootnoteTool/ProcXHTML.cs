@@ -12,23 +12,37 @@ namespace EpubTools;
 
 public enum NotePosition
 {
+    Undefined,
+    Inline,
+    BlockEnd,
+    MultiBlockEnd,
+    BlockEndMulti,
+    PageEnd
+}
+
+public enum NoteReposition
+{
     DontMove,
     Inline,
     BlockEnd,
+    BlockEndOnlySourceIsPageEnd,
+    PartEnd,
+    PartEndOnlySourceIsPageEnd,
     PageEnd
 }
 
 class NoteEntry
 {
-    public IElement srcParentNode;
+    public IElement srcBlockElement;
     public IElement srcNoteId;
-    public IElement dstParentNode;
+    public IElement dstNoteElement;
     public IElement dstNoteId;
-    public bool hasLinkTag = false;
+    public bool isLinkTag = false;
     public bool isInlineNode = false;
-    public int originalOrder = 0;
-    public int newOrder = 0;
-    public int wholeFileOrder = 0;
+    public int originNum = 0;
+    public int originClusterNum = 0;
+    public int newNum = 0;
+    public int wholeFileNum = 0;
 }
 
 
@@ -40,17 +54,22 @@ public class ProcXHTML
     const string AltNodeId = @"㊀㊁㊂㊃㊄㊅㊆㊇㊈㊉";
     static Dictionary<char, int> m_noteIdDict = [];
 
-    const string NoteCssClass = "note";
+    const string NoteClass = "note";
     const string NoteIdClass = "noteid";
+    const string PartClass = "partname";
 
     Regex RegId = new Regex(@"[\(\[〔【](\d+|[一二三四五六七八九〇]+)[\)\]〕】]");
 
     string m_filename;
 
-    List<NoteEntry> m_notes = [];
+    List<NoteEntry> m_notesPaired = [];
     List<IElement> m_orphanNotes = []; // notes without a corresponding link
 
     bool m_dirty = false;
+    NotePosition m_notePosition = NotePosition.Undefined;
+    int m_maxNoteNum = 0;
+
+    public int MaxNoteNum => m_maxNoteNum;
 
     static ProcXHTML()
     {
@@ -64,7 +83,7 @@ public class ProcXHTML
         }
     }
 
-    public ProcXHTML(string filename, NotePosition notePosition)
+    public ProcXHTML(string filename, NoteReposition reposition)
     {
         m_filename = Path.GetFileName(filename);
         Log.log("-------" + m_filename + "---------");
@@ -84,12 +103,17 @@ public class ProcXHTML
 
         IDocument document = parser.ParseDocument(text);
 
-        PrepareNotes(document, notePosition);
+        PrepareNotes(document, reposition);
 
-        //ProcessNotes(document, notePosition);
+        ProcessNotes(document, reposition);
 
         if (m_dirty)
             File.WriteAllText(filename, document.DocumentElement.OuterHtml);
+    }
+
+    void DeterminCurrentNotePosition()
+    {
+
     }
 
     static string ChineseToRoman(string text)
@@ -110,7 +134,7 @@ public class ProcXHTML
         return sb.ToString().ToLower();
     }
 
-    private int GetNoteOrder(string text)
+    private int GetNoteNum(string text)
     {
         text = text.Trim();
 
@@ -143,21 +167,25 @@ public class ProcXHTML
         return null;
     }
 
-    private void PrepareNotes(IDocument document, NotePosition notePosition)
+    private void PrepareNotes(IDocument document, NoteReposition notePosition)
     {
         // dict help find srcNoteId and dstNote
-        Dictionary<int, IElement> noteIdDict = [];
-        
-        int wholeFileIdCount = 0;
-        int lastDstCount = 0;
+        Dictionary<int, NoteEntry> entryDict = [];
+        NoteEntry lastEntry = null;
+        NoteEntry lastMatchedEntry = null;
 
-        IElement lastParent = null;
-        int curBlockCount = 0;
+        int wholeFileNum = 0;
+
+        int originClusterNum = 0;
+
+        bool isPageEnd = true;
 
         var noteids = document.QuerySelectorAll("." + NoteIdClass);
 
         if (noteids.Length == 0)
             return;
+
+        bool lastIsNote = false;
 
         foreach (var noteid in noteids)
         {
@@ -168,153 +196,274 @@ public class ProcXHTML
                 continue;
             }
 
-            int originalOrder = GetNoteOrder(noteid.TextContent);
+            int originNum = GetNoteNum(noteid.TextContent);
 
             // check error
-            if (originalOrder == 0)
+            if (originNum == 0)
             {
                 Log.log(m_filename, noteid, "Error: noteid is invalid");
                 continue;
             }
 
             // add new note entry
-            if (parent.ClassName != NoteCssClass)
+            if (parent.ClassName != NoteClass)
             {
-                noteIdDict.Add(originalOrder, noteid);
+                if (originNum == 0)
+                {
+                    Log.log(m_filename, noteid, "Error: noteid is invalid");
+                    continue;
+                }
+
+                if (lastMatchedEntry != null)
+                {
+                    originClusterNum++;
+                    lastMatchedEntry = null;
+                }
+
                 var entry = new NoteEntry();
-                entry.srcParentNode = parent;
+                entry.srcBlockElement = parent;
                 entry.srcNoteId = noteid;
-                entry.hasLinkTag = false;
-                entry.originalOrder = originalOrder;
-                entry.newOrder = 0;
-                entry.wholeFileOrder = wholeFileIdCount++;
+                entry.isLinkTag = false;
+                entry.originNum = originNum;
+                entry.originClusterNum = originClusterNum;
+                entry.newNum = 0;
+                entry.wholeFileNum = wholeFileNum++;
+
+                // check if number is duplicate
+                if (entryDict.ContainsKey(originNum))
+                {
+                    Log.log(m_filename, noteid, "Error: noteid is duplicated");
+                    m_orphanNotes.Add(noteid);
+                }
+
+                entryDict[originNum] = entry;
+
+                IElement lastParent = lastEntry?.srcBlockElement;
 
                 // check original order is valid
                 if (parent != lastParent)
                 {
                     if (lastParent == null)
                     {
-                        if (entry.originalOrder != 1)
+                        if (entry.originNum != 1)
                         {
                             Log.log(m_filename, noteid, "src id is out of order, should be 1 but really is "
-                                                        + entry.originalOrder);
+                                                        + entry.originNum);
                         }
                     } else
                     {
-                        var lastEntry = m_notes.Last();
-                        if (entry.originalOrder != lastEntry.originalOrder + 1 && entry.originalOrder != 1)
+                       if (entry.originNum != lastEntry.originNum + 1 && entry.originNum != 1)
                         {
                             Log.log(m_filename, noteid, "src id is out of order, should be 1 or "
-                                                        + (lastEntry.originalOrder + 1) + "but really is "
-                                                        + entry.originalOrder);
+                                                        + (lastEntry.originNum + 1) + "but really is "
+                                                        + entry.originNum);
                         }
                     }
                 }
                 else
                 {
-                    var lastEntry = m_notes.Last();
-                    if (entry.originalOrder != lastEntry.originalOrder + 1)
+                   if (entry.originNum != lastEntry.originNum + 1)
                     {
                         Log.log(m_filename, noteid, "src id is out of order, should be "
-                                                    + (lastEntry.originalOrder + 1) + " but really is " 
-                                                    + entry.originalOrder);
-                        // if the order is lower than last entry, ignore it
-                        if (entry.originalOrder <= lastEntry.originalOrder)
-                        {
-                            m_orphanNotes.Add(noteid);
-                            continue;
-                        }
+                                                    + (lastEntry.originNum + 1) + " but really is " 
+                                                    + entry.originNum);
                     }
                 }
 
-                // check new note position
-                if (notePosition == NotePosition.Inline)
-                {
-                    // DO NOTHING
-                }
-                else if (notePosition == NotePosition.BlockEnd)
-                {
-                    entry.newOrder = curBlockCount + 1;
-                    curBlockCount++;
-                }
-                else if (notePosition == NotePosition.PageEnd)
-                {
-                    entry.newOrder = wholeFileIdCount;
-                }
+                lastEntry = entry;
+                lastMatchedEntry = null;
 
-                if (entry.newOrder != entry.originalOrder)
-                    m_dirty = true;
-
-                m_notes.Add(entry);
-
-                if (lastParent != parent)
+                if (m_notesPaired.Count > 0)
                 {
-                    lastParent = parent;
-                    curBlockCount = 1;
+                    isPageEnd = false;
                 }
             }
             // this is a dst node, try link to src node id
             else
             {
                 // check duplicate noteid
-                if (parent == lastParent)
+                if (parent == lastMatchedEntry?.dstNoteElement)
                 {
-                    Log.log(m_filename, noteid, $"Waring: duplicated dst note id {originalOrder}");
-                    continue;
-                }
-
-                // check limits
-                if (lastDstCount >= m_notes.Count)
-                {
-                    Log.log(m_filename, noteid, $"Waring: too many dst note id {originalOrder}");
-                    continue;
-                }
-
-                var entry = m_notes[lastDstCount++];
-                if (entry.originalOrder != originalOrder)
-                {
-                    Log.log(m_filename, noteid, "Warning: noteid order not match, expect " 
-                                                + originalOrder + " but really is " + entry.originalOrder);
-
-                    // try to find the match entry
-                    while (lastDstCount < m_notes.Count)
-                    {
-                        if (m_notes[lastDstCount].originalOrder == originalOrder)
-                        {
-                            entry = m_notes[lastDstCount++];
-                            break;
-                        }
-                        else
-                        {
-                            lastDstCount++;
-                        }
-                    }
-                }
-
-                if (entry.originalOrder == originalOrder)
-                {
-                    entry.dstParentNode = parent;
-                    entry.dstNoteId = noteid;
-                    lastParent = parent;
-                }
-                else
-                {
+                    Log.log(m_filename, parent, $"Waring: duplicated dst note id {originNum}");
                     m_orphanNotes.Add(noteid);
-                    Log.log(m_filename, noteid, $"src noteid {originalOrder} not found");
+                    continue;
                 }
+
+                if (lastMatchedEntry != null && lastMatchedEntry.originNum + 1 != originNum)
+                {
+                    Log.log(m_filename, parent, $"dst noteId is out of order");
+                }
+
+                if (!entryDict.ContainsKey(originNum))
+                {
+                    Log.log(m_filename, parent, $"Waring: src note id {originNum} not found");
+                    m_orphanNotes.Add(noteid);
+                    continue;
+                }
+
+                var entry = entryDict[originNum];
+                entryDict.Remove(originNum);
+                entry.dstNoteElement = parent;
+                entry.dstNoteId = noteid;
+
+                m_notesPaired.Add(entry);
+
+                lastMatchedEntry = entry;
             }
+        }
+
+        if (isPageEnd)
+        {
+            m_notePosition = NotePosition.PageEnd;
         }
     }
 
-    private void ProcessNotes(IDocument document, NotePosition notePosition)
+    private void ProcessNotes(IDocument document, NoteReposition reposition)
     {
-        foreach (var entry in m_notes)
+        if (reposition == NoteReposition.BlockEndOnlySourceIsPageEnd && m_notePosition == NotePosition.PageEnd)
         {
-            if (notePosition == NotePosition.Inline)
-            {
-                entry.srcNoteId.InnerHtml = (entry.dstParentNode.TextContent);
-                entry.srcNoteId.ClassName = NoteCssClass;
-            }
+            RepositionNoteToBlockEnd();
+            return;
         }
+
+        if (reposition == NoteReposition.PartEndOnlySourceIsPageEnd && m_notePosition == NotePosition.PageEnd)
+        {
+            RepositionNoteToPartEnd();
+            return;
+        }
+
+        if (reposition == NoteReposition.PartEnd)
+        {
+            RepositionNoteToPartEnd();
+            return;
+        }
+
+        RenumberingNotes();
+    }
+
+    string GetNoteId(int num)
+    {
+        if (num < 1 || num > NoteId.Length)
+            return "[" + num + "]";
+
+        return NoteId[num - 1].ToString();
+    }
+
+    private void RepositionNoteToBlockEnd()
+    {
+        Log.log("repositioning " + m_filename);
+        NoteEntry lastEntry = null;
+        IElement blockLastNote = null; // new note will append to this note
+        int blockNoteNum = 1; // note num start from 1
+        int maxNoteNum = 0;
+
+        foreach (var entry in m_notesPaired)
+        {
+            // new block
+            if (entry.srcBlockElement != lastEntry?.srcBlockElement)
+            {
+                blockNoteNum = 1;
+                entry.srcBlockElement.After(entry.dstNoteElement);
+                entry.srcNoteId.TextContent = GetNoteId(blockNoteNum);
+                entry.dstNoteId.TextContent = GetNoteId(blockNoteNum);
+            }
+            else
+            {
+                blockLastNote.After(entry.dstNoteElement);
+                entry.srcNoteId.TextContent = GetNoteId(blockNoteNum);
+                entry.dstNoteId.TextContent = GetNoteId(blockNoteNum);
+            }
+            maxNoteNum = blockNoteNum > maxNoteNum ? blockNoteNum : maxNoteNum;
+            lastEntry = entry;
+            blockLastNote = entry.dstNoteElement;
+            blockNoteNum++;
+        }
+
+        m_maxNoteNum = maxNoteNum > m_maxNoteNum ? maxNoteNum : m_maxNoteNum;
+        m_dirty = true;
+    }
+
+    static IElement GetParentPartElement(IElement node)
+    {
+        for (var next = node.NextElementSibling; next != null; next = next.NextElementSibling)
+        {
+            if (next.ClassName == PartClass)
+                return next;
+        }
+        return null;
+    }
+
+    private void RepositionNoteToPartEnd()
+    {
+        Log.log("repositioning " + m_filename);
+        NoteEntry lastEntry = null;
+        IElement lastPartElement = null;
+        IElement blockLastNote = null; // new note will append to this note
+        int blockNoteNum = 1; // note num start from 1
+        int maxNoteNum = 0;
+
+        foreach (var entry in m_notesPaired)
+        {
+            var curPart = GetParentPartElement(entry.srcBlockElement);
+            // new block
+            if (curPart != lastPartElement)
+            {
+                blockNoteNum = 1;
+                lastPartElement = curPart;
+
+                if (lastPartElement == null)
+                {
+                    entry.srcBlockElement.After(entry.dstNoteElement);
+                    entry.srcNoteId.TextContent = GetNoteId(blockNoteNum);
+                    entry.dstNoteId.TextContent = GetNoteId(blockNoteNum);
+                } else
+                {
+                    lastPartElement.Before(entry.dstNoteElement);
+                    entry.srcNoteId.TextContent = GetNoteId(blockNoteNum);
+                    entry.dstNoteId.TextContent = GetNoteId(blockNoteNum);
+                }
+            }
+            else
+            {
+                blockLastNote.After(entry.dstNoteElement);
+                entry.srcNoteId.TextContent = GetNoteId(blockNoteNum);
+                entry.dstNoteId.TextContent = GetNoteId(blockNoteNum);
+            }
+            maxNoteNum = blockNoteNum > maxNoteNum ? blockNoteNum : maxNoteNum;
+            lastEntry = entry;
+            blockLastNote = entry.dstNoteElement;
+            blockNoteNum++;
+        }
+
+        m_maxNoteNum = maxNoteNum > m_maxNoteNum ? maxNoteNum : m_maxNoteNum;
+        m_dirty = true;
+    }
+
+    private void RenumberingNotes()
+    {
+        Log.log("renumbering " + m_filename);
+
+        int lastClusterNum = -1;
+        int clusterNoteNum = 1; // note num start from 1
+        int maxNoteNum = 0;
+
+        foreach (var entry in m_notesPaired)
+        {
+            // new block
+            if (entry.originClusterNum != lastClusterNum)
+            {
+                clusterNoteNum = 1;
+                lastClusterNum = entry.originClusterNum;
+            }
+
+            entry.srcNoteId.TextContent = GetNoteId(clusterNoteNum);
+            entry.dstNoteId.TextContent = GetNoteId(clusterNoteNum);
+
+            maxNoteNum = clusterNoteNum > maxNoteNum ? clusterNoteNum : maxNoteNum;
+            clusterNoteNum++;
+        }
+
+        m_maxNoteNum = maxNoteNum > m_maxNoteNum ? maxNoteNum : m_maxNoteNum;
+        m_dirty = true;
     }
 }
